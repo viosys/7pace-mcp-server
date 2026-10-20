@@ -46,10 +46,10 @@ test("REST shapes, filters, pagination, seconds and write methods", async () => 
     assert.equal(reads[1].url.searchParams.get("$skip"), "500");
     const report = await service.getTimeReport("2026-10-06", "2026-10-06");
     assert.equal(report.totalHours, 501 * 300 / 3600);
-    const created = await service.logTime({date:"2026-10-06",workItemId:42,hours:0.5,description:"Test"});
+    const created = await service.logTime({date:"2026-10-06",startTime:"14:12:34.567",workItemId:42,hours:0.5,description:"Test"});
     assert.equal(created.id, "saved-id");
     const post = calls.find(c => c.method === "POST");
-    assert.equal(post.body.timeStamp, "2026-10-06T00:00:00");
+    assert.equal(post.body.timeStamp, "2026-10-06T14:12:34.567");
     assert.equal(post.body.length, 1800);
     assert.equal(post.body.billableLength, 1800);
     await service.updateWorklog("saved-id", {hours:0.25});
@@ -172,6 +172,53 @@ test("NTLM rejects missing credentials, redirects and legacy challenges", async 
   } finally {
     delete process.env.SEVENPACE_USERNAME;
     delete process.env.SEVENPACE_PASSWORD;
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("MCP time booking accepts omitted and empty comments without inventing text", async () => {
+  const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
+  const bodies = [];
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", chunk => body += chunk);
+    req.on("end", () => {
+      bodies.push(JSON.parse(body));
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ data: { id: "test-only-worklog" } }));
+    });
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const transport = new StdioClientTransport({
+    command: process.execPath, args: ["dist/index.js"],
+    env: {
+      ...process.env,
+      MCP_TRANSPORT: "stdio",
+      SEVENPACE_AUTH_METHOD: "bearer",
+      SEVENPACE_ORGANIZATION: "example-collection",
+      SEVENPACE_TOKEN: "test-local",
+      SEVENPACE_BASE_URL: "http://127.0.0.1:" + server.address().port,
+      SEVENPACE_API_PATH: "/api/rest",
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "optional-comment-regression", version: "1.0" }, { capabilities: {} });
+  try {
+    await client.connect(transport);
+    const tools = await client.listTools();
+    const schema = tools.tools.find(tool => tool.name === "log_time").inputSchema;
+    assert(!schema.required.includes("description"), "Comment must be optional in MCP discovery");
+    const required = { workItemId: 42, date: "2026-10-08", startTime: "09:17:42", hours: 0.25 };
+    for (const extra of [{}, { description: "" }, { description: "   " }, { description: "Explicit user comment" }]) {
+      const result = await client.callTool({ name: "log_time", arguments: { ...required, ...extra } });
+      assert(!result.isError);
+    }
+    assert.deepEqual(bodies.map(body => body.comment), ["", "", "", "Explicit user comment"]);
+    assert(bodies.every(body => body.workItemId === 42 && body.length === 900));
+  } finally {
+    await client.close();
     server.closeAllConnections();
     server.close();
   }

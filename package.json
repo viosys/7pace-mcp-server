@@ -23,7 +23,7 @@
     "health-check": "node health-check.js",
     "prepublishOnly": "npm run build",
     "prepare": "npm run build",
-    "test:onprem": "node --test test-onprem.js",
+    "test:onprem": "node --test test-onprem.js test-start-time.js",
     "test:live-read": "node test-live-read.js"
   },
   "keywords": [

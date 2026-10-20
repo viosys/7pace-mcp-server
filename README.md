@@ -185,12 +185,13 @@ Top Work Items: #1234 (8hrs), #5678 (6hrs)
 **Parameters:**
 
 - `workItemId` (number): Azure DevOps Work Item ID
-- `date` (string): Date in YYYY-MM-DD format
+- `date` (string): Work start date in YYYY-MM-DD format in the 7pace account timezone
+- `startTime` (string, required): Actual work start in HH:mm:ss or HH:mm:ss.SSS format in the same timezone
 - `hours` (number): Hours worked
-- `description` (string): Work description
+- `description` (string, optional): Booking comment; omitted or empty means no comment
 - `activityType` (string, optional): Activity type name or ID
 
-Note: The server calls 7pace using `date`, `length` and `billableLength` (seconds) with `comment`. You only provide `hours`; conversion is handled for you.
+The server sends `timeStamp` as `date` + `T` + `startTime`, with no host-timezone conversion. Convert the measured work start to the account timezone first (for example Europe/Berlin, including summer/winter time). When submitting completed work later, keep the captured start time. Missing or invalid start times are rejected before any write; midnight is used only when explicitly provided for work that actually began then. `hours` is converted to `length` and `billableLength` in seconds; optional comments remain empty when omitted.
 
 **Example:**
 
@@ -198,6 +199,7 @@ Note: The server calls 7pace using `date`, `length` and `billableLength` (second
 await log_time({
   workItemId: 7128,
   date: "2024-01-15",
+  startTime: "09:15:00",
   hours: 2.5,
   description: "API endpoint development",
 });

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Fix: allow omitted or empty booking comments without inserting generated text.
+
+- Fix: require an explicit account-local `startTime` for `log_time`; remove the hardcoded midnight timestamp. Existing callers must pass the actual measured start time.
+
 ## 1.0.6 - 2025-08-11
 
 - Docs: document `list_activity_types` and final `log_time` payload semantics (date/length/billableLength)

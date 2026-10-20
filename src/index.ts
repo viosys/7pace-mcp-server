@@ -39,9 +39,10 @@ interface WorklogEntry {
 
 interface TimeEntry {
   date: string;
+  startTime: string;
   workItemId: number;
   hours: number;
-  description: string;
+  description?: string;
   activityType?: string; // Name or ID
 }
 
@@ -51,6 +52,15 @@ type WorklogListResponse = { data?: any[]; value?: any[] } | any[];
 
 function isIsoDateOnly(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function validateStartTime(value: unknown): asserts value is string {
+  if (typeof value !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?$/.test(value)) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      "startTime is required in HH:mm:ss or HH:mm:ss.SSS format in the 7pace account's local timezone; capture the actual work start, never default to midnight"
+    );
+  }
 }
 
 function isPositiveNumber(value: unknown): value is number {
@@ -172,6 +182,7 @@ class SevenPaceService {
   }
 
   async logTime(entry: TimeEntry): Promise<any> {
+    validateStartTime(entry.startTime);
     // Check for test credentials
     if (this.config.token === "test-token-replace-with-real-token") {
       throw new McpError(
@@ -185,10 +196,10 @@ class SevenPaceService {
     // REST uses a local timestamp and durations in seconds.
     const worklog: any = {
       workItemId: entry.workItemId,
-      timeStamp: entry.date + "T00:00:00",
+      timeStamp: entry.date + "T" + entry.startTime,
       length: Math.round(entry.hours * 3600),
       billableLength: Math.round(entry.hours * 3600),
-      comment: entry.description,
+      comment: entry.description ?? "",
       ...(activityTypeId ? { activityTypeId } : {}),
     };
 
@@ -540,20 +551,24 @@ class SevenPaceMCPServer {
                   type: "string",
                   description: "Date in YYYY-MM-DD format",
                 },
+                startTime: {
+                  type: "string",
+                  description: "Actual work start in HH:mm:ss or HH:mm:ss.SSS format in the 7pace account's local timezone (for example Europe/Berlin). Required; no midnight default. Convert the captured start timestamp to account local time before calling.",
+                },
                 hours: {
                   type: "number",
                   description: "Number of hours worked",
                 },
                 description: {
                   type: "string",
-                  description: "Description of work performed",
+                  description: "Optional booking comment; omitted or empty means no comment",
                 },
                 activityType: {
                   type: "string",
                   description: "Type of activity (name or ID, optional)",
                 },
               },
-              required: ["workItemId", "date", "hours", "description"],
+              required: ["workItemId", "date", "startTime", "hours"],
             },
           },
           {
@@ -779,6 +794,7 @@ class SevenPaceMCPServer {
         "date must be in YYYY-MM-DD format"
       );
     }
+    validateStartTime(args.startTime);
     if (!isPositiveNumber(args.hours)) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -789,12 +805,13 @@ class SevenPaceMCPServer {
       typeof args.description !== "string" ||
       args.description.trim().length === 0
     ) {
-      throw new McpError(ErrorCode.InvalidParams, "description is required");
+      args.description = "";
     }
 
     const entry: TimeEntry = {
       workItemId: args.workItemId,
       date: args.date,
+      startTime: args.startTime,
       hours: args.hours,
       description: args.description,
       activityType: args.activityType,
@@ -810,6 +827,7 @@ class SevenPaceMCPServer {
             `✅ Time logged successfully!\n\n` +
             `Work Item: #${entry.workItemId}\n` +
             `Date: ${entry.date}\n` +
+            `Start time (account local): ${entry.startTime}\n` +
             `Hours: ${entry.hours}\n` +
             `Description: ${entry.description}\n` +
             `Worklog ID: ${result.id || result.Id || "N/A"}`,
